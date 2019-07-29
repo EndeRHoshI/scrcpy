@@ -46,20 +46,17 @@ stream_recv_packet(struct stream *stream, AVPacket *packet) {
     uint32_t len = buffer_read32be(&header[8]);
     SDL_assert(len);
 
-    void *buf = av_malloc(len);
-    if (!buf) {
-        LOGE("Could not allocate packet buffer");
+    if (av_new_packet(packet, len)) {
+        LOGE("Could not allocate packet");
         return false;
     }
 
-    r = net_recv_all(stream->socket, buf, len);
+    r = net_recv_all(stream->socket, packet->data, len);
     if (r < len) {
-        av_free(buf);
+        av_packet_unref(packet);
         return false;
     }
 
-    packet->data = buf;
-    packet->size = len;
     packet->pts = pts != NO_PTS ? pts : AV_NOPTS_VALUE;
 
     return true;
@@ -225,7 +222,6 @@ run_stream(void *data) {
 
     for (;;) {
         AVPacket packet;
-        av_init_packet(&packet);
         bool ok = stream_recv_packet(stream, &packet);
         if (!ok) {
             // end of stream
@@ -233,7 +229,7 @@ run_stream(void *data) {
         }
 
         ok = stream_push_packet(stream, &packet);
-        av_free(packet.data);
+        av_packet_unref(&packet);
         if (!ok) {
             // cannot process packet (error already logged)
             break;
